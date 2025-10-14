@@ -5,20 +5,7 @@ Coordinates edge and server training.
 
 import torch
 import torch.nn as nn
-import torch    # Load config
-    config = load_config(args.config)
-    
-    # Auto-detect and set best available device
-    device = get_device(force_cpu=args.force_cpu)
-    print_device_info(device)
-    optimize_for_device(device)
-    
-    # Update config with detected device
-    config['experiment']['device'] = str(device)
-    
-    # Create directories
-    os.makedirs(config['experiment']['log_dir'], exist_ok=True)
-    os.makedirs(config['experiment']['checkpoint_dir'], exist_ok=True) optim
+import torch.optim as optim
 from torch.utils.data import DataLoader
 import yaml
 import argparse
