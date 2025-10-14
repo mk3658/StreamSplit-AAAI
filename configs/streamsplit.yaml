@@ -1,0 +1,204 @@
+# StreamSplit Configuration
+
+# General settings
+experiment:
+  name: "streamsplit_audioset"
+  seed: 42
+  device: "cpu"  # cuda, cpu, mps
+  log_dir: "./logs"
+  checkpoint_dir: "./checkpoints"
+  
+# Dataset configuration
+data:
+  dataset: "audioset"  # audioset, edge_audio
+  data_dir: "./data"
+  sample_rate: 16000
+  audio_duration: 10  # seconds
+  num_classes: 10
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  
+# Edge device configuration
+edge:
+  device_type: "raspberry_pi_4b"
+  
+  # Audio processing
+  fft:
+    window_size_ms: 25  # 400 samples at 16kHz
+    hop_size_ms: 10     # 160 samples
+    n_fft: 512
+    n_mels: 128
+    fmin: 80
+    fmax: 8000
+  
+  # Adaptive feature extraction
+  adaptive_policy:
+    enabled: true
+    resource_threshold: 0.70
+    hysteresis_up: 0.03
+    hysteresis_down: 0.05
+    weights:
+      cpu: 0.5
+      memory: 0.3
+      battery: 0.15
+      thermal: 0.05
+  
+  # Reduced resolution settings
+  reduced_resolution:
+    n_mels: 64
+    hop_size_ms: 20
+    fmin: 80
+    fmax: 8000
+  
+  # Memory bank
+  memory_bank:
+    min_size: 64
+    max_size: 512
+    embedding_dim: 128
+    
+  # Distribution-aware sampling (DAS)
+  das:
+    num_components: 5  # GMM components
+    alpha: 1.0  # Sampling temperature
+    epsilon: 1e-6
+    
+  # Local contrastive learning
+  contrastive:
+    temperature: 0.1
+    momentum: 0.999
+    lambda_consistency: 0.1
+    gradient_accumulation: 4
+    
+  # Augmentations
+  augmentation:
+    time_shift: 0.2
+    freq_mask_param: 10
+    amplitude_scale: [0.8, 1.2]
+    
+  # Resource monitoring
+  resource_monitor:
+    poll_interval_ms: 100
+    
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  
+  # Model architecture
+  encoder:
+    backbone: "mobilenet_v3_small"
+    width_mult: 0.75
+    embedding_dim: 128
+    use_early_exit: true
+    split_points: [0, 2, 4, 7, 11, 13]  # Layer indices for RL splitting
+    
+  # Training
+  training:
+    batch_size: 256
+    num_epochs: 100  # Quick test (change to 100 for full training)
+    learning_rate: 0.0005  # 5e-4 in decimal
+    weight_decay: 0.0001   # 1e-4 in decimal
+    optimizer: "adam"
+    scheduler: "cosine"
+    warmup_epochs: 1  # Reduced for quick test
+    
+  # Hybrid loss
+  hybrid_loss:
+    lambda_laplacian: 0.5
+    num_projections: 100  # Sliced-Wasserstein
+    k_nearest_neighbors: 10  # Laplacian
+    sigma_w: 0.5  # Laplacian bandwidth
+    
+  # Prototype centers
+  prototypes:
+    num_centers: 20
+    update_frequency: 100  # iterations
+    momentum: 0.9
+    
+  # Selective transmission
+  transmission:
+    uncertainty_threshold_base: 0.5
+    network_min: 0.5  # Mbps
+    network_critical: 1.0  # Mbps
+    beta_network: 1.0
+    beta_battery: 0.5
+    weights:
+      consistency: 0.4
+      entropy: 0.3
+      prototype: 0.3
+      
+  # Aggregation
+  aggregation:
+    kernel_bandwidth: "adaptive"  # or float value
+    
+# Dynamic computation splitting
+splitting:
+  enabled: true
+  max_episode_steps: 100
+  
+  # RL agent (PPO)
+  algorithm: "ppo"
+  hidden_dim: 128
+  learning_rate: 0.0003
+  gamma: 0.99
+  lambda_gae: 0.95
+  epsilon_clip: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  update_epochs: 10
+  batch_size: 64
+  
+  # Reward weights
+  alpha_accuracy: 0.5
+  alpha_latency: 0.3
+  alpha_resource: 0.2  # Adaptive transformations
+  transformations:
+    bottleneck:
+      enabled: true
+      compression_ratios: [0.25, 0.5, 0.75]
+      
+    quantization:
+      enabled: true
+      bits: [8, 4]  # Supported bit widths
+      
+    conditional_compute:
+      enabled: true
+      complexity_threshold: 0.7
+      
+# Evaluation
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1_score
+    - retrieval_precision@10
+    - silhouette_score
+    
+  resource_metrics:
+    - cpu_utilization
+    - memory_usage
+    - power_consumption
+    - bandwidth_usage
+    - latency
+    
+  # Benchmarking
+  benchmark:
+    duration_minutes: 60
+    log_interval_seconds: 10
+    
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  use_tensorboard: true
+  use_wandb: false
+  wandb_project: "streamsplit"
+  wandb_entity: null
+  save_frequency: 10  # epochs
+  
+# Reproducibility
+reproducibility:
+  deterministic: true
+  benchmark: false
