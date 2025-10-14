@@ -5,7 +5,20 @@ Coordinates edge and server training.
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch    # Load config
+    config = load_config(args.config)
+    
+    # Auto-detect and set best available device
+    device = get_device(force_cpu=args.force_cpu)
+    print_device_info(device)
+    optimize_for_device(device)
+    
+    # Update config with detected device
+    config['experiment']['device'] = str(device)
+    
+    # Create directories
+    os.makedirs(config['experiment']['log_dir'], exist_ok=True)
+    os.makedirs(config['experiment']['checkpoint_dir'], exist_ok=True) optim
 from torch.utils.data import DataLoader
 import yaml
 import argparse
@@ -21,6 +34,7 @@ from server.hybrid_loss import HybridLoss
 from server.aggregation import ServerAggregator, UncertaintyEstimator
 from utils.logger import Logger
 from utils.metrics import MetricsTracker
+from utils.device import get_device, print_device_info, optimize_for_device
 from datasets import create_audioset_loaders
 
 
@@ -139,8 +153,13 @@ def main(args):
     # Load configuration
     config = load_config(args.config)
     
-    # Set device
-    device = torch.device(config['experiment']['device'])
+    # Auto-detect and set best available device
+    device = get_device(force_cpu=args.force_cpu)
+    print_device_info(device)
+    optimize_for_device(device)
+    
+    # Update config with detected device
+    config['experiment']['device'] = str(device)
     
     # Create directories
     os.makedirs(config['experiment']['log_dir'], exist_ok=True)
@@ -208,11 +227,13 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Train StreamSplit model'
+        description='Train StreamSplit model with GPU support'
     )
     parser.add_argument('--config', type=str, 
                        default='configs/streamsplit.yaml',
                        help='Path to configuration file')
+    parser.add_argument('--force_cpu', action='store_true',
+                       help='Force CPU usage even if GPU is available')
     
     args = parser.parse_args()
     main(args)

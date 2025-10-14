@@ -23,6 +23,7 @@ from edge.rl_splitting import SplitPointEnv, PPOSplitAgent, SplitController
 from edge.resource_monitor import ResourceMonitor
 from models.mobilenet_v3 import MobileNetV3Small
 from utils.logger import Logger
+from utils.device import get_device, print_device_info, optimize_for_device
 
 
 def plot_training_curves(rewards, policy_losses, value_losses, save_path):
@@ -115,12 +116,20 @@ def evaluate_policy(agent, env, num_episodes=10):
 
 def train_rl_agent(config, args):
     """
-    Train RL agent for split point selection.
+    Train RL agent for split point selection (GPU-enabled).
     
     Args:
         config: Configuration dictionary
         args: Command line arguments
     """
+    # Auto-detect and set best available device
+    device = get_device(force_cpu=args.force_cpu)
+    print_device_info(device)
+    optimize_for_device(device)
+    
+    # Update config with detected device
+    config['experiment']['device'] = str(device)
+    
     # Create directories
     log_dir = Path(config['experiment']['log_dir']) / 'rl_training'
     checkpoint_dir = Path(config['experiment']['checkpoint_dir']) / 'rl'
@@ -134,16 +143,18 @@ def train_rl_agent(config, args):
     resource_monitor = ResourceMonitor(config)
     resource_monitor.start()
     
-    # Initialize model (for split point info)
+    # Initialize model (for split point info) and move to device
+    print("Initializing model...")
     model = MobileNetV3Small(
         width_mult=config['server']['encoder']['width_mult'],
         embedding_dim=config['server']['encoder']['embedding_dim']
-    )
+    ).to(device)
+    print(f"✓ Model moved to {device}")
     
     # Create environment
     env = SplitPointEnv(config, resource_monitor, model)
     
-    # Create agent
+    # Create agent (will use device from config)
     agent = PPOSplitAgent(config, env)
     
     print("=" * 60)
@@ -352,7 +363,7 @@ def test_split_controller(config, policy_path):
 def main():
     """Main training function."""
     parser = argparse.ArgumentParser(
-        description='Train RL agent for split point selection'
+        description='Train RL agent for split point selection (GPU-enabled)'
     )
     parser.add_argument('--config', type=str,
                        default='configs/streamsplit.yaml',
@@ -367,6 +378,8 @@ def main():
                        help='Evaluation frequency (episodes)')
     parser.add_argument('--checkpoint_frequency', type=int, default=100,
                        help='Checkpoint saving frequency (episodes)')
+    parser.add_argument('--force_cpu', action='store_true',
+                       help='Force CPU usage even if GPU is available')
     parser.add_argument('--test', action='store_true',
                        help='Test trained controller')
     parser.add_argument('--policy_path', type=str,
@@ -386,6 +399,7 @@ def main():
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # For multi-GPU
     
     if args.test:
         # Test mode
