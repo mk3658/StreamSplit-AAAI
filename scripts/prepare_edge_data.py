@@ -9,9 +9,10 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from datasets import create_edge_loaders
+# Import from local datasets module (not HuggingFace datasets)
+from datasets.edge_audio import create_edge_loaders
 
 
 def main():
