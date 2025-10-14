@@ -1,6 +1,6 @@
 """
-Download and prepare AudioSet dataset.
-Downloads REAL audio from YouTube using yt-dlp or creates synthetic data.
+Download and prepare FULL AudioSet dataset.
+Downloads REAL audio from YouTube using yt-dlp.
 """
 
 import argparse
@@ -10,16 +10,15 @@ import os
 import subprocess
 import pandas as pd
 import urllib.request
+import json
 from pathlib import Path
 from tqdm import tqdm
 import multiprocessing as mp
 from functools import partial
+import time
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Import from local datasets module (not HuggingFace datasets)
-from datasets.audioset import create_audioset_loaders
 
 
 def check_yt_dlp():
@@ -207,125 +206,137 @@ def download_audioset_real(csv_path, output_dir, num_samples=100, num_workers=2,
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Download and prepare AudioSet dataset (real or synthetic)'
+        description='Download FULL AudioSet dataset from YouTube'
     )
     parser.add_argument('--config', type=str,
                        default='configs/streamsplit.yaml',
                        help='Path to configuration file')
-    parser.add_argument('--num_classes', type=int, default=10,
-                       help='Number of classes to use')
     parser.add_argument('--subset', type=str, default='balanced',
-                       choices=['balanced', 'eval', 'unbalanced'],
-                       help='AudioSet subset to download')
-    parser.add_argument('--use_real', action='store_true',
-                       help='Download REAL audio from YouTube (requires yt-dlp)')
-    parser.add_argument('--num_samples', type=int, default=100,
-                       help='Number of samples to download (for real data)')
-    parser.add_argument('--num_workers', type=int, default=2,
-                       help='Number of parallel download workers')
+                       choices=['balanced', 'eval', 'unbalanced', 'all'],
+                       help='AudioSet subset to download (use "all" for complete dataset)')
+    parser.add_argument('--num_samples', type=int, default=None,
+                       help='Limit number of samples (default: None = download all)')
+    parser.add_argument('--num_workers', type=int, default=4,
+                       help='Number of parallel download workers (default: 4)')
     parser.add_argument('--duration', type=int, default=10,
                        help='Audio clip duration in seconds')
     parser.add_argument('--csv_path', type=str, default=None,
                        help='Path to AudioSet CSV metadata (auto-download if not provided)')
+    parser.add_argument('--output_dir', type=str, default=None,
+                       help='Output directory for audio files (default: data/audioset/audio)')
+    parser.add_argument('--resume', action='store_true',
+                       help='Resume previous download (skip existing files)')
+    parser.add_argument('--skip_failed', action='store_true',
+                       help='Skip failed downloads from previous run')
     
     args = parser.parse_args()
     
-    # Load config
-    print(f"Loading configuration from {args.config}...")
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    print(f"\n{'='*60}")
+    print("🌐 AUDIOSET DOWNLOADER - REAL YOUTUBE AUDIO")
+    print(f"{'='*60}\n")
     
-    # Update config
-    config['data']['num_classes'] = args.num_classes
-    data_dir = config['data']['data_dir']
+    # Check/install yt-dlp
+    if not check_yt_dlp():
+        print("❌ Cannot proceed without yt-dlp.")
+        print("Please install it manually: pip install yt-dlp")
+        return 1
     
-    print(f"\nDownloading AudioSet ({args.subset} subset)...")
-    print(f"Number of classes: {args.num_classes}")
-    print(f"Data directory: {data_dir}")
-    
-    # Handle real AudioSet download
-    if args.use_real:
-        print("\n🌐 REAL AUDIO DOWNLOAD MODE ENABLED")
-        print("="*60)
-        
-        # Check/install yt-dlp
-        if not check_yt_dlp():
-            print("❌ Cannot proceed without yt-dlp. Falling back to synthetic data.")
-            args.use_real = False
+    # Determine output directory
+    if args.output_dir is None:
+        if os.path.exists(args.config):
+            with open(args.config, 'r') as f:
+                config = yaml.safe_load(f)
+            data_dir = config['data']['data_dir']
         else:
-            # Determine CSV path
-            if args.csv_path is None:
-                args.csv_path = os.path.join(
-                    data_dir, 
-                    'audioset', 
-                    f'{args.subset}_train_segments.csv'
-                )
+            data_dir = './data'
+        args.output_dir = os.path.join(data_dir, 'audioset', 'audio')
+    
+    print(f"Configuration:")
+    print(f"  Subset: {args.subset}")
+    print(f"  Output directory: {args.output_dir}")
+    print(f"  Workers: {args.num_workers}")
+    print(f"  Duration: {args.duration}s")
+    print(f"  Resume: {args.resume}")
+    
+    # Handle "all" subset - download all three subsets
+    if args.subset == 'all':
+        subsets = ['balanced', 'eval', 'unbalanced']
+        print(f"\n📦 Downloading ALL AudioSet subsets: {', '.join(subsets)}")
+        print("⚠️  This will download ~2 million audio clips (may take days)")
+        print("⚠️  Requires ~400-600 GB of storage space")
+        
+        response = input("\nContinue? (yes/no): ")
+        if response.lower() not in ['yes', 'y']:
+            print("Download cancelled.")
+            return 0
+        
+        total_downloaded = 0
+        for subset in subsets:
+            print(f"\n{'='*60}")
+            print(f"Processing subset: {subset}")
+            print(f"{'='*60}")
+            
+            # Determine CSV path for this subset
+            csv_path = os.path.join(
+                os.path.dirname(args.output_dir),
+                f'{subset}_train_segments.csv'
+            )
             
             # Download metadata
-            if not download_audioset_metadata(args.csv_path, args.subset):
-                print("❌ Cannot download metadata. Falling back to synthetic data.")
-                args.use_real = False
-            else:
-                # Download real audio from YouTube
-                audio_dir = os.path.join(data_dir, 'audioset', 'audio')
-                num_downloaded = download_audioset_real(
-                    args.csv_path,
-                    audio_dir,
-                    num_samples=args.num_samples,
-                    num_workers=args.num_workers,
-                    duration=args.duration
-                )
-                
-                if num_downloaded > 0:
-                    print(f"\n✅ Successfully downloaded {num_downloaded} real audio samples!")
-                    print(f"📁 Audio files saved to: {audio_dir}")
-                else:
-                    print("\n❌ No samples downloaded. Falling back to synthetic data.")
-                    args.use_real = False
+            if not download_audioset_metadata(csv_path, subset):
+                print(f"❌ Failed to download {subset} metadata. Skipping...")
+                continue
+            
+            # Download audio
+            num_downloaded = download_audioset_real(
+                csv_path,
+                args.output_dir,
+                num_samples=args.num_samples,
+                num_workers=args.num_workers,
+                duration=args.duration
+            )
+            total_downloaded += num_downloaded
+        
+        print(f"\n{'='*60}")
+        print(f"✅ TOTAL DOWNLOADED: {total_downloaded} audio files")
+        print(f"{'='*60}")
     
-    if not args.use_real:
-        print("\n🎭 Using synthetic AudioSet data for demonstration...")
-    
-    # Create dataloaders (this will trigger download/creation)
-    print("\nCreating datasets...")
-    train_loader, val_loader, test_loader = create_audioset_loaders(config)
-    
-    print(f"\n{'='*60}")
-    print("Dataset Statistics:")
-    print(f"{'='*60}")
-    print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Validation samples: {len(val_loader.dataset)}")
-    print(f"Test samples: {len(test_loader.dataset)}")
-    total = (len(train_loader.dataset) + 
-             len(val_loader.dataset) + 
-             len(test_loader.dataset))
-    print(f"Total samples: {total}")
-    
-    # Show class mapping
-    class_mapping = train_loader.dataset.get_class_mapping()
-    print(f"\nClass Mapping:")
-    for class_id, class_name in sorted(class_mapping.items(), 
-                                      key=lambda x: int(x[0])):
-        print(f"  {class_id}: {class_name}")
-    
-    # Test loading a batch
-    print(f"\nTesting data loading...")
-    waveforms, labels = next(iter(train_loader))
-    print(f"  Batch shape: {waveforms.shape}")
-    print(f"  Labels shape: {labels.shape}")
-    print(f"  Waveform range: [{waveforms.min():.3f}, {waveforms.max():.3f}]")
-    
-    print(f"\n{'='*60}")
-    print("✓ AudioSet preparation completed successfully!")
-    print(f"{'='*60}")
-    
-    if args.use_real:
-        print("\n✅ Using REAL AudioSet data from YouTube!")
     else:
-        print("\n🎭 Using synthetic data for demonstration.")
-        print("To download real data, run with --use_real flag:")
-        print("  python scripts/download_audioset.py --use_real --num_samples 100")
+        # Download single subset
+        # Determine CSV path
+        if args.csv_path is None:
+            args.csv_path = os.path.join(
+                os.path.dirname(args.output_dir),
+                f'{args.subset}_train_segments.csv'
+            )
+        
+        # Download metadata
+        print(f"\n📄 Downloading AudioSet metadata...")
+        if not download_audioset_metadata(args.csv_path, args.subset):
+            print("❌ Cannot download metadata.")
+            return 1
+        
+        # Download real audio from YouTube
+        print(f"\n⬇️  Downloading audio files...")
+        num_downloaded = download_audioset_real(
+            args.csv_path,
+            args.output_dir,
+            num_samples=args.num_samples,
+            num_workers=args.num_workers,
+            duration=args.duration
+        )
+        
+        if num_downloaded > 0:
+            print(f"\n{'='*60}")
+            print(f"✅ Successfully downloaded {num_downloaded} audio files!")
+            print(f"📁 Saved to: {args.output_dir}")
+            print(f"{'='*60}")
+        else:
+            print("\n❌ No samples downloaded.")
+            return 1
+    
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
