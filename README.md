@@ -98,7 +98,7 @@ pytest tests/ -v
 ## Project Structure
 
 ```
-StreamSplit-AAAI/
+streamsplit-mobisys/
 ├── edge/                          # Edge Learner + Control Plane (Sec. 4.1-4.2)
 │   ├── audio_processing.py        # Mel-spectrogram extraction + augmentation
 │   ├── distributional_memory.py   # GMM + boundary-aware virtual negatives (Eq. 7-9, 11)
