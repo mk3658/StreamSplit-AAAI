@@ -187,8 +187,9 @@ hardware deployment:
 ```bibtex
 @inproceedings{quan2026streamsplit,
   title={StreamSplit: Continuous Audio Representation Learning via Uncertainty-Guided Adaptive Splitting},
-  author={Quan, Minh K. and Pathirana, Pubudu N.},
-  booktitle={Proceedings of the 24th Annual International Conference on Mobile Systems, Applications and Services (MobiSys '26)},
+  author={Quan, Minh K and Pathirana, Pubudu N},
+  booktitle={Proceedings of the 24th Annual International Conference on Mobile Systems, Applications and Services},
+  pages={54--68},
   year={2026}
 }
 ```
